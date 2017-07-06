@@ -1,5 +1,6 @@
 import random
 import sys 
+import os
 
 start = 65  # 'A'
 sample_count = 8 
@@ -26,14 +27,21 @@ def main():
             seq_list.append(gen_random())
         else:
             seq_list.append(gen_vowel())
-    with open('train-x-' + sys.argv[1], 'w') as file:
+    out_dirname = './data/'
+    if not os.path.exists(os.path.dirname(out_dirname)):
+        try:
+            os.makedirs(os.path.dirname(out_dirname))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                                                raise
+    with open(out_dirname + 'train-x-' + sys.argv[1], 'w') as file:
         if sys.argv[1] != '3':
             for seq in seq_list:
                 file.write(seq + "\n")
         else:
             for seq in seq_list:
                 file.write(seq[0] + "\n")
-    with open('train-y-' + sys.argv[1], 'w') as file:
+    with open(out_dirname + 'train-y-' + sys.argv[1], 'w') as file:
         if sys.argv[1] == '1':
             for seq in seq_list:
                 file.write(seq + "\n")
