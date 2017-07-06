@@ -3,10 +3,11 @@ import numpy as np
 def read_input(type, batch_size):
     x = []
     y = []
-    with open('train-x-' + type, 'r') as file:
+    dirname = '../data/'
+    with open(dirname + 'train-x-' + type, 'r') as file:
         for line in file:
             x.append([ord(w) for w in line if w != '\n'])
-    with open('train-y-' + type, 'r') as file:
+    with open(dirname + 'train-y-' + type, 'r') as file:
         for line in file:
             y.append([ord(w) for w in line if w != '\n'])
     head = 0
