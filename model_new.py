@@ -152,7 +152,6 @@ class Seq2SeqModel():
 
             self.decoder_train_inputs_embedded = tf.nn.embedding_lookup(
                 self.embedding_matrix, self.decoder_train_inputs)
-
     def _init_simple_encoder(self):
         with tf.variable_scope("Encoder") as scope:
             (self.encoder_outputs, self.encoder_state) = (
@@ -302,8 +301,8 @@ class Seq2SeqModel():
 def make_seq2seq_model(**kwargs):
     args = dict(encoder_cell=LSTMCell(10),
                 decoder_cell=LSTMCell(20),
-                vocab_size=10,
-                embedding_size=10,
+                vocab_size=100,
+                embedding_size=27,
                 attention=True,
                 bidirectional=True,
                 debug=False)
@@ -315,36 +314,41 @@ def train_on_task(session, model,type,
                        length_from=3, length_to=8,
                        vocab_lower=2, vocab_upper=10,
                        batch_size=100,
-                       epoch=10,
+                       epochs=3,
                        verbose=True):
 
 #    batches = helpers.random_sequences(length_from=length_from, length_to=length_to,
 #                                       vocab_lower=vocab_lower, vocab_upper=vocab_upper,
 #                                       batch_size=batch_size)
-    max_batches = math.ceil(entries_count / batch_size)
+    max_batches = int(math.ceil(entries_count / batch_size))
     batches = helpers.read_input(type=type, batch_size=batch_size)
     loss_track = []
     try:
-        for batch in range(max_batches):
-            batch_data = next(batches)
-            fd = model.make_train_inputs(batch_data[0], batch_data[1])
-            _, l = session.run([model.train_op, model.loss], fd)
-            loss_track.append(l)
+        for epoch in range(epochs):
+            for batch in range(max_batches):
+                batch_data = []
+                if batch == 0 and epoch != 0:
+                    batch_data = batches.send('restart')
+                else:
+                    batch_data = next(batches)
+                fd = model.make_train_inputs(batch_data[0], batch_data[1])
+                _, l = session.run([model.train_op, model.loss], fd)
+                loss_track.append(l)
 
-            if verbose:
-                if batch == 0 or batch % 10 == 0 or batch == max_batches - 1:
-                    print('batch {}'.format(batch))
-                    print('  minibatch loss: {}'.format(session.run(model.loss, fd)))
-                    for i, (e_in, dt_pred) in enumerate(zip(
-                            fd[model.encoder_inputs].T,
-                            session.run(model.decoder_prediction_train, fd).T
-                        )):
-                        print('  sample {}:'.format(i + 1))
-                        print('    enc input           > {}'.format(e_in))
-                        print('    dec train predicted > {}'.format(dt_pred))
-                        if i >= 2:
-                            break
-                    print()
+                if verbose:
+                    if batch == 0 or batch % 20 == 0 or batch == max_batches - 1:
+                        print('epoch {0} batch {1}'.format(epoch + 1, batch + 1))
+                        print('  minibatch loss: {}'.format(session.run(model.loss, fd)))
+                        for i, (e_in, dt_pred) in enumerate(zip(
+                                fd[model.encoder_inputs].T,
+                                session.run(model.decoder_prediction_train, fd).T
+                            )):
+                            print('  sample {}:'.format(i + 1))
+                            print('    enc input           > {}'.format(''.join([chr(x) for x in e_in])))
+                            print('    dec train predicted > {}'.format(''.join([chr(x) for x in dt_pred[:-1]])))
+                            if i >= 2:
+                                break
+                        print()
     except KeyboardInterrupt:
         print('training interrupted')
 
@@ -396,10 +400,10 @@ if __name__ == '__main__':
         tf.reset_default_graph()
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        config.log_device_placement = True
+#        config.log_device_placement = True
         session = tf.Session(config=config)
-        with tf.device('/gpu:1'):
-            model = make_seq2seq_model(debug=False)
+#        with tf.device('/gpu:0'):
+        model = make_seq2seq_model(debug=False)
         session.run(tf.global_variables_initializer())
         loss_track_attention = train_on_task(session, model, args.type)
 

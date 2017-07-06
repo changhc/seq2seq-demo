@@ -5,18 +5,21 @@ def read_input(type, batch_size):
     y = []
     with open('train-x-' + type, 'r') as file:
         for line in file:
-            x.append([ord(w) for w in line])
+            x.append([ord(w) for w in line if w != '\n'])
     with open('train-y-' + type, 'r') as file:
         for line in file:
-            y.append([ord(w) for w in line])
+            y.append([ord(w) for w in line if w != '\n'])
     head = 0
     tail = head + batch_size
     while True:
-        yield [x[head:tail], y[head:tail]]
+        command = (yield [x[head:tail], y[head:tail]])
         head = head + batch_size
         tail = tail + batch_size
         if (tail > len(x)):
             tail = len(x)
+        if command == 'restart':
+            head = 0
+            tail = head + batch_size
 
 def batch(inputs, max_sequence_length=None):
     """
