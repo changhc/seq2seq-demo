@@ -1,7 +1,7 @@
 # Working with TF commit 24466c2e6d32621cd85f0a78d47df6eed2c5c5a6
 
 import math
-
+import argparse
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.seq2seq as seq2seq
@@ -10,6 +10,11 @@ from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell
 
 import helpers
 
+entries_count = int(1e5)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('type')
+args = parser.parse_args()
 
 class Seq2SeqModel():
     """Seq2Seq model usign blocks from new `tf.contrib.seq2seq`.
@@ -306,27 +311,28 @@ def make_seq2seq_model(**kwargs):
     return Seq2SeqModel(**args)
 
 
-def train_on_copy_task(session, model,
+def train_on_task(session, model,type,
                        length_from=3, length_to=8,
                        vocab_lower=2, vocab_upper=10,
                        batch_size=100,
-                       max_batches=5000,
-                       batches_in_epoch=1000,
+                       epoch=10,
                        verbose=True):
 
-    batches = helpers.random_sequences(length_from=length_from, length_to=length_to,
-                                       vocab_lower=vocab_lower, vocab_upper=vocab_upper,
-                                       batch_size=batch_size)
+#    batches = helpers.random_sequences(length_from=length_from, length_to=length_to,
+#                                       vocab_lower=vocab_lower, vocab_upper=vocab_upper,
+#                                       batch_size=batch_size)
+    max_batches = math.ceil(entries_count / batch_size)
+    batches = helpers.read_input(type=type, batch_size=batch_size)
     loss_track = []
     try:
-        for batch in range(max_batches+1):
+        for batch in range(max_batches):
             batch_data = next(batches)
-            fd = model.make_train_inputs(batch_data, batch_data)
+            fd = model.make_train_inputs(batch_data[0], batch_data[1])
             _, l = session.run([model.train_op, model.loss], fd)
             loss_track.append(l)
 
             if verbose:
-                if batch == 0 or batch % batches_in_epoch == 0:
+                if batch == 0 or batch % 10 == 0 or batch == max_batches - 1:
                     print('batch {}'.format(batch))
                     print('  minibatch loss: {}'.format(session.run(model.loss, fd)))
                     for i, (e_in, dt_pred) in enumerate(zip(
@@ -373,14 +379,14 @@ if __name__ == '__main__':
         with tf.Session() as session:
             model = make_seq2seq_model(attention=True)
             session.run(tf.global_variables_initializer())
-            loss_track_attention = train_on_copy_task(session, model)
+            loss_track_attention = train_on_task(session, model, args.type)
 
         tf.reset_default_graph()
 
         with tf.Session() as session:
             model = make_seq2seq_model(attention=False)
             session.run(tf.global_variables_initializer())
-            loss_track_no_attention = train_on_copy_task(session, model)
+            loss_track_no_attention = train_on_task(session, model, args.type)
 
         import matplotlib.pyplot as plt
         plt.plot(loss_track)
@@ -388,10 +394,15 @@ if __name__ == '__main__':
 
     else:
         tf.reset_default_graph()
-        session = tf.InteractiveSession()
-        model = make_seq2seq_model(debug=False)
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        config.log_device_placement = True
+        session = tf.Session(config=config)
+        with tf.device('/gpu:1'):
+            model = make_seq2seq_model(debug=False)
         session.run(tf.global_variables_initializer())
+        loss_track_attention = train_on_task(session, model, args.type)
 
-        fd = model.make_inference_inputs([[5, 4, 6, 7], [6, 6]])
+        #fd = model.make_inference_inputs([[5, 4, 6, 7], [6, 6]])
 
-        inf_out = session.run(model.decoder_prediction_inference, fd)
+        #inf_out = session.run(model.decoder_prediction_inference, fd)

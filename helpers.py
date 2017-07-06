@@ -1,11 +1,6 @@
 import numpy as np
-import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument('type')
-args = parser.parse_args()
-
-def read_input(type):
+def read_input(type, batch_size):
     x = []
     y = []
     with open('train-x-' + type, 'r') as file:
@@ -14,8 +9,14 @@ def read_input(type):
     with open('train-y-' + type, 'r') as file:
         for line in file:
             y.append([ord(w) for w in line])
-    return x, y
-
+    head = 0
+    tail = head + batch_size
+    while True:
+        yield [x[head:tail], y[head:tail]]
+        head = head + batch_size
+        tail = tail + batch_size
+        if (tail > len(x)):
+            tail = len(x)
 
 def batch(inputs, max_sequence_length=None):
     """
@@ -75,3 +76,4 @@ def random_sequences(length_from, length_to,
                               size=random_length()).tolist()
             for _ in range(batch_size)
         ]
+
