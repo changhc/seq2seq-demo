@@ -22,77 +22,80 @@ max_len = 10
 
 def read_seqs(type):
     x = []
+    x_lens = []
     y = []
+    y_lens = []
     dirname = '../data/'
     with open(dirname + 'train-x-' + type, 'r') as file:
         for line in file:
-            result = Variable(torch.LongTensor([ord(w) for w in line]).view(-1, 1))
-            if use_cuda:
-                result = result.cuda(gpu)
+            result = [ord(w) for w in line]
             x.append(result)
+            x_lens.append(len(result))
     with open(dirname + 'train-y-' + type, 'r') as file:
         for line in file:
-            result = Variable(torch.LongTensor([ord(w) for w in line]).view(-1, 1))
-            if use_cuda:
-                result = result.cuda(gpu)
+#            result = Variable(torch.LongTensor([ord(w) for w in line]).view(-1, 1))
+#            if use_cuda:
+#                result = result.cuda(gpu)
+            result = [ord(w) for w in line]
             y.append(result)
-    return x, y
+            y_lens.append(len(result))
+    return x, x_lens, y, y_lens
 
-def train_batch(input_variable, target_variable, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=max_len):
+def train_batch(input_variable, input_lengths, target_variable, target_lengths, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=max_len):
 
     total_loss = 0
-#    input_variable = Variable(torch.LongTensor(input_variable)).transpose(0, 1)
-#    target_variable = Variable(torch.LongTensor(target_variable)).transpose(0, 1)
-#    if use_cuda:
-#        input_variable = input_variable.cuda(gpu)
-#        target_variable = target_variable.cuda(cpu)
+    batch_size = len(input_variable)
+    input_variable = Variable(torch.LongTensor(input_variable))
+    target_variable = Variable(torch.LongTensor(target_variable))
+    if use_cuda:
+        input_variable = input_variable.cuda(gpu)
+        target_variable = target_variable.cuda(gpu)
 
-    for i in range(len(input_variable)):
-        
-        encoder_optimizer.zero_grad()
-        decoder_optimizer.zero_grad()
+    print(input_variable.size())
+    encoder_optimizer.zero_grad()
+    decoder_optimizer.zero_grad()
 
-        encoder_hidden = encoder.initHidden()
-        encoder_cell = encoder.initCell()
+    encoder_hidden = encoder.initHidden(batch_size)
+    encoder_cell = encoder.initCell(batch_size)
+#    encoder_hidden = None
+#    encoder_cell = None
 
-        input_length = input_variable[i].size()[0]
-        target_length = target_variable[i].size()[0]
+#    input_length = input_variable[i].size()[0]
+#    target_length = target_variable[i].size()[0]
 
-        encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size))
-        encoder_outputs = encoder_outputs.cuda(gpu) if use_cuda else encoder_outputs
+    encoder_outputs, encoder_hidden, encoder_cell = encoder(input_variable, input_lengths, encoder_hidden, encoder_cell)
+    
+    loss = 0
 
-        loss = 0
-        for ei in range(input_length):
-            encoder_output, encoder_hidden, encoder_cell = encoder(input_variable[i][ei], encoder_hidden, encoder_cell)
-            encoder_outputs[ei] = encoder_output[0][0]
+    decoder_hidden = encoder_hidden[:decoder.n_layers]
+    decoder_cell = encoder_cell[:decoder.n_layers]
 
-        decoder_input = Variable(torch.LongTensor([[SOS_token]]))
-        decoder_input = decoder_input.cuda(gpu) if use_cuda else decoder_input
+    decoder_input = Variable(torch.LongTensor([SOS_token] * batch_size))
+    all_decoder_outputs = Variable(torch.zeros(max(target_lengths), batch_size, decoder.output_size))
 
-        decoder_hidden = encoder_hidden
-        decoder_cell = encoder_cell
-        out = None
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_cell, decoder_attention = decoder(decoder_input, decoder_hidden, decoder_cell, encoder_output, encoder_outputs)
-            loss += criterion(decoder_output[0], target_variable[i][di])
-            decoder_input = target_variable[i][di]
-            _, index = torch.max(decoder_output[0], 0)
-            if di == 0:
-                out = index
-            else:
-                out = torch.cat((out, index), 0)
+    if use_cuda:
+        decoder_input = decoder_input.cuda(gpu)
+        all_decoder_outputs = all_decoder_outputs.cuda(gpu)
 
-        loss.backward()
-                
-        encoder_optimizer.step()
-        decoder_optimizer.step()
+    out = None
+    # Run through decoder one step at a time
+    for di in range(max(target_lengths)):
+        decoder_output, decoder_hidden, decoder_cell, decoder_attention = decoder(decoder_input, decoder_hidden, decoder_cell, encoder_outputs)
+        all_decoder_outputs[di] = decoder_output
+        decoder_input = target_variable[di]
 
-        if i < 2:
-            print('Sample {0}:\n\
-                    Expected output: {1}\n\
-                    Decoder output: {2}'
-                    .format(i + 1, torch.transpose(target_variable[i], 0, 1), out.unsqueeze(0)))
-        total_loss += loss.data[0] / target_length
+    loss = criterion(all_decoder_outputs.transpose(0, 1).contiguous(), target_variable.transpose(0, 1).contiguous())
+    loss.backward()
+            
+    encoder_optimizer.step()
+    decoder_optimizer.step()
+
+    for i in range(2):
+        print('Sample {0}:\n\
+                Expected output: {1}\n\
+                Decoder output: {2}'
+                .format(i + 1, torch.transpose(target_variable[i], 0, 1), out.unsqueeze(0)))
+    total_loss += loss.data[0] / target_length
 
     return total_loss / len(input_variable)
 
@@ -103,7 +106,7 @@ def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
     
     criterion = nn.NLLLoss()
     
-    x, y = read_seqs(type)
+    x, x_lens, y, y_lens = read_seqs(type)
 
     for i in range(n_epoch):
         head = 0
@@ -111,9 +114,11 @@ def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
         for batch in range(int(math.ceil(len(x) / batch_size))):
             print('epoch {0} batch {1}'.format(i + 1, batch + 1))
             input_variable = x[head:tail]
+            input_lens = x_lens[head:tail]
             target_variable = y[head:tail]
+            target_lens = y_lens[head:tail]
 
-            loss = train_batch(input_variable, target_variable, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+            loss = train_batch(input_variable, input_lens, target_variable, target_lens, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
             print('loss: {}'.format(loss))
             head += batch_size
             tail += batch_size

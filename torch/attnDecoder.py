@@ -25,26 +25,28 @@ class AttnDecoderRNN(nn.Module):
 
         self.embedding = nn.Embedding(self.output_size, self.hidden_size)
         self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.v = nn.Parameter(torch.FloatTensor(1, hidden_size))
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.lstm = nn.LSTM(self.hidden_size, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p) 
         self.out = nn.Linear(hidden_size, output_size)
 
-    def forward(self, input, hidden, cell, encoder_output, encoder_outputs):
+    def forward(self, input, hidden, cell, encoder_outputs):
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
 
-        attn_weights = F.softmax(self.attn(torch.cat((embedded[0], hidden[0]), 1)))
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0), encoder_outputs.unsqueeze(0))
+        attn_weights = self.attn_func(hidden[-1], encoder_outputs)
+        attn_applied = torch.bmm(attn_weights, encoder_outputs)
+        attn_applied = attn_applied.transpose(0, 1)
 
-        output = torch.cat((embedded[0], attn_applied[0]), 1)
-        output = self.attn_combine(output).unsqueeze(0)
+        output = torch.cat((embedded, attn_applied), 2)
 
         for i in range(self.n_layers):
-            output = F.relu(output)
             output, (hidden, cell) = self.lstm(output, (hidden, cell))
-        output = F.log_softmax(self.out(output[0]))
+
+        output = F.log_softmax(self.out(torch.cat((output, attn_applied), 1)))
         return output, hidden, cell, attn_weights
+
 
     def initHidden(self):
         result = Variable(torch.zeros(1, 1, self.hidden_size))
@@ -59,3 +61,27 @@ class AttnDecoderRNN(nn.Module):
             return result.cuda(self.gpu)
         else:
             return result
+
+    def attn_func(self, hidden, encoder_outputs):
+        max_len = encoder_outputs.size(1)
+        this_batch_size = encoder_outputs.size(0)
+
+        # Create variable to store attention energies
+        attn_energies = Variable(torch.zeros(this_batch_size, max_len)) # B x S
+
+        if use_cuda:
+            attn_energies = attn_energies.cuda(self.gpu)
+
+        # For each batch of encoder outputs
+        for b in range(this_batch_size):
+            # Calculate energy for each encoder output
+            for i in range(max_len):
+                attn_energies[b, i] = self.score(hidden[:, b], encoder_outputs[b, i].unsqueeze(0))
+
+        # Normalize energies to weights in range 0 to 1, resize to 1 x B x S
+        return F.softmax(attn_energies).unsqueeze(1)
+
+    def score(self, hidden, encoder_output):
+        energy = self.attn(torch.cat((hidden, encoder_output), 1))
+        energy = self.v.dot(energy)
+        return energy 
