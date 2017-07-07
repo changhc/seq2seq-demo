@@ -3,6 +3,7 @@ from io import open
 import unicodedata
 import math
 import argparse
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -38,12 +39,21 @@ def read_seqs(type):
     return x, y
 
 def train_batch(input_variable, target_variable, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=max_len):
+
     total_loss = 0
+#    input_variable = Variable(torch.LongTensor(input_variable)).transpose(0, 1)
+#    target_variable = Variable(torch.LongTensor(target_variable)).transpose(0, 1)
+#    if use_cuda:
+#        input_variable = input_variable.cuda(gpu)
+#        target_variable = target_variable.cuda(cpu)
+
     for i in range(len(input_variable)):
-        encoder_hidden = encoder.initHidden()
-        encoder_cell = encoder.initCell()
+        
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
+
+        encoder_hidden = encoder.initHidden()
+        encoder_cell = encoder.initCell()
 
         input_length = input_variable[i].size()[0]
         target_length = target_variable[i].size()[0]
@@ -61,23 +71,29 @@ def train_batch(input_variable, target_variable, encoder, decoder, encoder_optim
 
         decoder_hidden = encoder_hidden
         decoder_cell = encoder_cell
-
+        out = None
         for di in range(target_length):
             decoder_output, decoder_hidden, decoder_cell, decoder_attention = decoder(decoder_input, decoder_hidden, decoder_cell, encoder_output, encoder_outputs)
             loss += criterion(decoder_output[0], target_variable[i][di])
             decoder_input = target_variable[i][di]
+            _, index = torch.max(decoder_output[0], 0)
+            if di == 0:
+                out = index
+            else:
+                out = torch.cat((out, index), 0)
 
         loss.backward()
-
+                
         encoder_optimizer.step()
         decoder_optimizer.step()
-        
+
         if i < 2:
             print('Sample {0}:\n\
                     Expected output: {1}\n\
                     Decoder output: {2}'
-                    .format(i + 1, target_variable[i], decoder_output))
+                    .format(i + 1, torch.transpose(target_variable[i], 0, 1), out.unsqueeze(0)))
         total_loss += loss.data[0] / target_length
+
     return total_loss / len(input_variable)
 
 def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
@@ -85,7 +101,7 @@ def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=lr)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=lr)
     
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.NLLLoss()
     
     x, y = read_seqs(type)
 
@@ -99,6 +115,10 @@ def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
 
             loss = train_batch(input_variable, target_variable, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
             print('loss: {}'.format(loss))
+            head += batch_size
+            tail += batch_size
+            if tail > len(x):
+                tail = len(x)
 
 def main():
     parser = argparse.ArgumentParser()
