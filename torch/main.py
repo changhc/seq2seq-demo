@@ -140,7 +140,7 @@ def main():
     if use_cuda:
         encoderl = encoderl.cuda(gpu)
         attn_decoderl = attn_decoderl.cuda(gpu)
-    train_epoch(encoderl, attn_decoderl, 5, 100, args.type)
+    train_epoch(encoderl, attn_decoderl, 5, 200, args.type)
 
 if __name__ == '__main__':
     main()

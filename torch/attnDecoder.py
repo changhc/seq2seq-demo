@@ -24,7 +24,7 @@ class AttnDecoderRNN(nn.Module):
         self.gpu = gpu
 
         self.embedding = nn.Embedding(self.output_size, self.hidden_size)
-        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.attn = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.v = nn.Parameter(torch.FloatTensor(1, hidden_size))
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.lstm = nn.LSTM(self.hidden_size, self.hidden_size)
@@ -32,7 +32,7 @@ class AttnDecoderRNN(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
 
     def forward(self, input, hidden, cell, encoder_outputs):
-        embedded = self.embedding(input).view(1, 1, -1)
+        embedded = self.embedding(input).view(1, len(input), -1)
         embedded = self.dropout(embedded)
 
         attn_weights = self.attn_func(hidden[-1], encoder_outputs)
@@ -43,7 +43,8 @@ class AttnDecoderRNN(nn.Module):
 
         for i in range(self.n_layers):
             output, (hidden, cell) = self.lstm(output, (hidden, cell))
-
+        
+        output = output.unsqueeze(0)
         output = F.log_softmax(self.out(torch.cat((output, attn_applied), 1)))
         return output, hidden, cell, attn_weights
 
@@ -76,12 +77,12 @@ class AttnDecoderRNN(nn.Module):
         for b in range(this_batch_size):
             # Calculate energy for each encoder output
             for i in range(max_len):
-                attn_energies[b, i] = self.score(hidden[:, b], encoder_outputs[b, i].unsqueeze(0))
+                attn_energies[b, i] = self.score(hidden[b, :], encoder_outputs[b, i])
 
         # Normalize energies to weights in range 0 to 1, resize to 1 x B x S
         return F.softmax(attn_energies).unsqueeze(1)
 
     def score(self, hidden, encoder_output):
-        energy = self.attn(torch.cat((hidden, encoder_output), 1))
+        energy = self.attn(torch.cat((hidden, encoder_output), 0).unsqueeze(0))
         energy = self.v.dot(energy)
         return energy 
