@@ -51,7 +51,6 @@ def train_batch(input_variable, input_lengths, target_variable, target_lengths, 
         input_variable = input_variable.cuda(gpu)
         target_variable = target_variable.cuda(gpu)
 
-    print(input_variable.size())
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
@@ -65,7 +64,8 @@ def train_batch(input_variable, input_lengths, target_variable, target_lengths, 
 
     encoder_outputs, encoder_hidden, encoder_cell = encoder(input_variable, input_lengths, encoder_hidden, encoder_cell)
     
-    loss = 0
+    loss = Variable(torch.zeros(1))
+    total_loss = 0
 
     decoder_hidden = encoder_hidden[:decoder.n_layers]
     decoder_cell = encoder_cell[:decoder.n_layers]
@@ -76,17 +76,29 @@ def train_batch(input_variable, input_lengths, target_variable, target_lengths, 
     if use_cuda:
         decoder_input = decoder_input.cuda(gpu)
         all_decoder_outputs = all_decoder_outputs.cuda(gpu)
-
-    out = None
+        loss = loss.cuda(gpu)
+    
     # Run through decoder one step at a time
     for di in range(max(target_lengths)):
         decoder_output, decoder_hidden, decoder_cell, decoder_attention = decoder(decoder_input, decoder_hidden, decoder_cell, encoder_outputs)
         all_decoder_outputs[di] = decoder_output
-        decoder_input = target_variable[di]
-
-    loss = criterion(all_decoder_outputs.transpose(0, 1).contiguous(), target_variable.transpose(0, 1).contiguous())
-    loss.backward()
+        decoder_input = target_variable[:, di]
             
+        loss += criterion(decoder_output.contiguous(), decoder_input.contiguous())
+
+#        loss = criterion(all_decoder_outputs.view(output_size[0] * output_size[1], -1).contiguous(), target_variable.view(target_size[0] * target_size[1]).contiguous())
+    output_size = all_decoder_outputs.size()
+    target_size = target_variable.size()
+
+
+#    loss = loss.view(output_size[0], output_size[1])
+#    word_count = (target_variable != EOS_token).sum()
+#    loss = loss.sum() / word_count.float()
+    loss = loss / max(target_lengths)
+    loss.backward()
+    
+
+    sample = all_decoder_outputs[:, :2].topk(1, dim=2)[1]
     encoder_optimizer.step()
     decoder_optimizer.step()
 
@@ -94,10 +106,9 @@ def train_batch(input_variable, input_lengths, target_variable, target_lengths, 
         print('Sample {0}:\n\
                 Expected output: {1}\n\
                 Decoder output: {2}'
-                .format(i + 1, torch.transpose(target_variable[i], 0, 1), out.unsqueeze(0)))
-    total_loss += loss.data[0] / target_length
+                .format(i + 1, target_variable[i].unsqueeze(0), sample[:, i].transpose(0, 1)))
 
-    return total_loss / len(input_variable)
+    return loss
 
 def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
     
@@ -119,7 +130,7 @@ def train_epoch(encoder, decoder, n_epoch, batch_size, type, lr=0.01):
             target_lens = y_lens[head:tail]
 
             loss = train_batch(input_variable, input_lens, target_variable, target_lens, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
-            print('loss: {}'.format(loss))
+            print('loss: {0}'.format(loss))
             head += batch_size
             tail += batch_size
             if tail > len(x):
@@ -140,7 +151,7 @@ def main():
     if use_cuda:
         encoderl = encoderl.cuda(gpu)
         attn_decoderl = attn_decoderl.cuda(gpu)
-    train_epoch(encoderl, attn_decoderl, 5, 200, args.type)
+    train_epoch(encoderl, attn_decoderl, 5, 100, args.type)
 
 if __name__ == '__main__':
     main()
