@@ -116,8 +116,14 @@ def main(args):
                 for i, (inp, pred) in enumerate(
                         zip(fd[encoder.encoder_inputs], predict)):
                     print('sample {0}:'.format(i + 1))
-                    print('{0:>15}\t{1}'.format('input', np.asarray(inp)))
-                    print('{0:>15}\t{1}'.format('prediction', pred[:-1]))
+                    print('{0:<15}\t{1}'.format(
+                        'input:',
+                        ''.join([chr(x) for x in np.asarray(inp)]),
+                    ))
+                    print('{0:<15}\t{1}'.format(
+                        'prediction:',
+                        ''.join([chr(x) for x in pred[:-1]]),
+                    ))
                     if i > 0:
                         break
                 print(' ')
