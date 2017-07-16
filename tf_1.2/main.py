@@ -16,6 +16,8 @@ decoder_hidden_units = 20
 
 parser = argparse.ArgumentParser()
 parser.add_argument('type')
+parser.add_argument('--attention', default=True)
+parser.add_argument('--bidirection', default=True)
 
 
 def readInput(type, batch_size):
@@ -57,6 +59,11 @@ def readInput(type, batch_size):
 
 
 def main(args):
+    global decoder_hidden_units
+    if args.attention:
+        decoder_hidden_units = encoder_hidden_units
+        if args.bidirection:
+            decoder_hidden_units *= 2
     batches, max_len = readInput(args.type, batch_size)
     embeddings = tf.Variable(
         tf.random_uniform([vocab_size, input_embedding_size], -1.0, 1.0),
@@ -67,6 +74,8 @@ def main(args):
         max_len[0],
         encoder_hidden_units,
         embeddings,
+        attention=args.attention,
+        bidirection=args.bidirection,
     )
     decoder = DecoderRNN(
         batch_size,
@@ -74,7 +83,9 @@ def main(args):
         vocab_size,
         decoder_hidden_units,
         embeddings,
-        encoder.encoder_final_state,
+        encoder,
+        attention=args.attention,
+        bidirection=args.bidirection,
     )   
     loss = sequence_loss(
         logits=decoder.decoder_logits,
@@ -98,7 +109,7 @@ def main(args):
             }
             _, l = sess.run([train_op, loss], fd)
 
-            if (index + 1 % 100 == 0 or index + 1 == len(batches)):
+            if ((index + 1) % 100 == 0 or index + 1 == len(batches)):
                 print('epoch {0} batch {1}:'.format(epoch + 1, index + 1))
                 print('loss: {0}'.format(l))
                 predict = sess.run(decoder.decoder_prediction, fd)
