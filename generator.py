@@ -3,8 +3,9 @@ import sys
 import os
 
 start = 65  # 'A'
-sample_count = 8 
-alphabet = range(start, start + 26)
+sample_count = 8
+n_voc = 26
+alphabet = range(start, start + n_voc)
 vowel = [start + 0, start + 4, start + 8, start + 14, start + 20]
 consonant = [x for x in alphabet if x not in vowel]
 
@@ -50,12 +51,20 @@ def main():
                 file.write(seq[::-1] + "\n")
         elif sys.argv[1] == '3':
             for seq in seq_list:
-                out = random.sample(alphabet, sample_count)
-                is_vowel = [i for i in range(sample_count) if out[i] in vowel][::-1]
-                for i in is_vowel:
-                    out = out[:i + 1] + [seq[1]] + out [i + 1:]
-                out = out[:sample_count]
-                file.write(''.join([chr(x) for x in out]) + "\n")
+                out = [
+                    (ord(i) - start + 1) % n_voc + start for i in seq[0]
+                ]
+                isVowel = False
+                for i in range(sample_count):
+                    if isVowel:
+                        isVowel = False
+                        out[i] = seq[1]
+                        continue
+                    if out[i] in vowel:
+                        isVowel = True
+                    
+                file.write(''.join([chr(i) for i in out]) + "\n")
+
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         raise ValueError("Invalid arguments!")
