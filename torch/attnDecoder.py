@@ -27,9 +27,9 @@ class AttnDecoderRNN(nn.Module):
         self.attn = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.v = nn.Parameter(torch.FloatTensor(1, hidden_size))
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        self.lstm = nn.LSTM(self.hidden_size, self.hidden_size)
+        self.lstm = nn.LSTM(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p) 
-        self.out = nn.Linear(hidden_size, output_size)
+        self.out = nn.Linear(hidden_size * 2, output_size)
 
     def forward(self, input, hidden, cell, encoder_outputs):
         embedded = self.embedding(input).view(1, len(input), -1)
@@ -44,8 +44,8 @@ class AttnDecoderRNN(nn.Module):
         for i in range(self.n_layers):
             output, (hidden, cell) = self.lstm(output, (hidden, cell))
         
-        output = output.unsqueeze(0)
-        output = F.log_softmax(self.out(torch.cat((output, attn_applied), 1)))
+        output = output.squeeze(0)
+        output = F.log_softmax(self.out(torch.cat((output, attn_applied.squeeze(0)), 1)))
         return output, hidden, cell, attn_weights
 
 
